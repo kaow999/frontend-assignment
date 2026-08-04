@@ -46,7 +46,13 @@ const readPrice = (
   key: string,
   fallback: number,
 ): number => {
-  const parsed = Number(params.get(key));
+  const raw = params.get(key);
+  // `Number(null)` and `Number("")` are both 0, which is a legitimate price —
+  // so absence has to be ruled out before parsing, or a missing `max` would
+  // read as $0 and filter the whole catalogue away.
+  if (raw === null || raw.trim() === "") return fallback;
+
+  const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
 
   return Math.min(Math.max(parsed, PRICE_FLOOR), PRICE_CEILING);

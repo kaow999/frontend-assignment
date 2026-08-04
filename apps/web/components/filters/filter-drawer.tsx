@@ -47,7 +47,7 @@ export const FilterDrawer = ({ resultCount, ...panel }: Props) => (
           Filter products by price, colour and size.
         </Dialog.Description>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
           <FilterPanelContent {...panel} />
         </div>
 
