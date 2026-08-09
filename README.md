@@ -10,6 +10,25 @@ work to be done.
 
 ---
 
+## Submission notes
+
+**The storefront is built.** Everything specific to the submission — the stack
+and why, the trade-offs, the two bugs found while verifying, and what would come
+next with more time — is in **[`apps/web/README.md`](./apps/web/README.md)**.
+
+Two things worth knowing before running it:
+
+- **Node 20.9+ is required**, not the 18 this README used to claim. `nvm use`
+  picks it up from the committed `.nvmrc`. Beyond that it is `bun install` and
+  `bun dev`, with no environment variables to set.
+- **Adding to a cart now requires signing in.** Accounts are not part of the
+  four requirements — they were added afterwards, on request, because the cart
+  was one row set shared by every visitor. That change to the backend is
+  documented in [Accounts and sessions](#accounts-and-sessions--a-change-to-the-backend)
+  below. Browsing and filtering the catalogue stay open to everyone.
+
+---
+
 ## The assignment
 
 Build the category page from the design. It must satisfy the following.
@@ -112,6 +131,40 @@ solution needs more than `bun install` and `bun dev`.
 
 ---
 
+## Accounts and sessions — a change to the backend
+
+> The brief says the backend is finished and to say what changed if it is not.
+> This is that note. Accounts are **not** part of the four requirements; they
+> were added afterwards, on request, because the cart was a single global row
+> set that every visitor shared.
+>
+> This changes the assignment's own behaviour: adding to a cart now requires
+> signing in, where before it did not.
+
+**Schema.** Two new tables, `users` and `sessions`, and `cart_items.user_id`,
+which is `NOT NULL` — every line belongs to an account, so an unowned row cannot
+be written at all (migrations `0001` and `0002`).
+
+**Routes.** `POST /auth/register`, `POST /auth/login`, `POST /auth/logout` and
+`GET /auth/me`. Passwords are hashed with argon2id via `Bun.password` — no new
+dependency. The session is an opaque row id in an httpOnly, `SameSite=Lax`
+cookie, so no script on the page can read it, and signing out revokes it
+server-side the way a stateless JWT could not.
+
+**Cart.** There is no guest cart. Every route under `/cart` requires a session
+and answers `401` without one, and every query is scoped to the owner. Reaching
+another shopper's line by id answers 404 rather than 403 — a 403 would confirm
+the id exists. The catalogue stays open to anyone; only putting something in a
+basket needs an account.
+
+**What this does not do.** No password reset, no email verification, and no rate
+limiting on login.
+
+CORS now sends `credentials: true`, which is why `WEB_ORIGIN` must stay an exact
+origin and can never become a wildcard.
+
+---
+
 ## Tech stack
 
 What ships in the repo. The storefront row is a starting point, not a
@@ -124,14 +177,17 @@ constraint — see [Frontend stack](#frontend-stack--bring-your-own).
 | API        | Elysia on Bun                                 |
 | Database   | SQLite via Drizzle ORM (`bun:sqlite`)         |
 | Validation | Zod v4 on both request and response           |
-| Tests      | `bun test` — 129, covering the API and seeder |
+| Tests      | `bun test` — 160, covering the API and seeder |
 
 ---
 
 ## Prerequisites
 
 - **Bun 1.3.13+** — the package manager and runtime ([install](https://bun.sh))
-- **Node.js 18+** — required by Next.js
+- **Node.js 20.9+** — required by Next.js 16, which declares
+  `engines.node >= 20.9`. (This line said 18+ before; that predates the Next 16
+  upgrade and the app will not start on 18.) An `.nvmrc` is committed, so
+  `nvm use` picks the right version.
 
 No database server to install; SQLite is a file.
 
@@ -237,10 +293,11 @@ bun test                      # from the repo root, via turbo
 cd packages/backend && bun test
 ```
 
-129 tests covering every endpoint, all filter combinations, cart arithmetic,
-checkout, and the seeder. They drive the real Elysia app in-process against an
-in-memory database, so the full stack — routing, validation, handlers — runs
-exactly as it would over the network. No server or port needed.
+160 tests covering every endpoint, all filter combinations, cart arithmetic,
+checkout, accounts and cart isolation, and the seeder. They drive the real
+Elysia app in-process against an in-memory database, so the full stack —
+routing, validation, handlers — runs exactly as it would over the network. No
+server or port needed.
 
 ---
 
@@ -264,19 +321,22 @@ Run from the repo root:
 apps/
   web/                     Next.js storefront (port 3000)
     app/                   App Router pages
-    lib/eden.ts            typed API client
+    components/            presentation, grouped by feature
+    features/              queries, mutations and behaviour
+    lib/                   typed API client and shared plumbing
 packages/
   backend/                 Elysia API (port 4000)
     src/
       app.ts               route graph (no port binding — used by tests)
       index.ts             bootstrap: migrate, seed, listen
-      common/              errors, HTTP mapping, id generation, shared schemas
+      common/              errors, HTTP mapping, id generation, session cookie
       db/                  drizzle schema, migrations, seeder
       domains/             one folder per domain
         products/          products.repo · .biz · .service · .router · .schema
         colors/
         sizes/
         cart/
+        auth/
     test/                  bun test suites
     drizzle/               generated SQL migrations
   eslint-config/

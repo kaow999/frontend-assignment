@@ -6,7 +6,7 @@ import {
 import { newId } from "../../common/id";
 import type { CartItem } from "../../db/schema";
 import { productsRepo } from "../products/products.repo";
-import { cartRepo, type CartItemWithProduct } from "./cart.repo";
+import { cartRepo, type CartItemWithProduct, type CartOwner } from "./cart.repo";
 import type { AddToCartInput } from "./cart.schema";
 
 export type CartSummary = {
@@ -55,20 +55,28 @@ const summarize = (items: CartItemWithProduct[]): CartSummary => {
   };
 };
 
-/** Business layer: rules, invariants and cross-domain orchestration. */
+/**
+ * Business layer: rules, invariants and cross-domain orchestration.
+ *
+ * Every entry point takes the cart's owner — a user id, or null for the guest
+ * cart — and passes it to the repository, so a missing scope is a type error
+ * rather than a silent leak between shoppers.
+ */
 export const cartBiz = {
-  async get(): Promise<CartSummary> {
-    return summarize(await cartRepo.findAll());
+  async get(owner: CartOwner): Promise<CartSummary> {
+    return summarize(await cartRepo.findAll(owner));
   },
 
-  async getItem(id: string): Promise<CartItemWithProduct> {
-    const item = await cartRepo.findById(id);
+  async getItem(id: string, owner: CartOwner): Promise<CartItemWithProduct> {
+    const item = await cartRepo.findById(id, owner);
+    // Someone else's line is reported as missing rather than forbidden —
+    // a 403 would confirm the id exists.
     if (!item) throw new NotFoundError(`Cart item '${id}' not found`);
 
     return item;
   },
 
-  async addItem(input: AddToCartInput): Promise<CartItem> {
+  async addItem(input: AddToCartInput, owner: CartOwner): Promise<CartItem> {
     const quantity = input.quantity ?? 1;
     assertQuantity(quantity);
 
@@ -78,10 +86,10 @@ export const cartBiz = {
 
     // Adding a product already in the cart tops up the existing row rather
     // than creating a duplicate line.
-    const existing = await cartRepo.findByProductId(input.productId);
+    const existing = await cartRepo.findByProductId(input.productId, owner);
     if (existing) {
       const merged = Math.min(existing.quantity + quantity, MAX_QUANTITY);
-      const updated = await cartRepo.updateQuantity(existing.id, merged);
+      const updated = await cartRepo.updateQuantity(existing.id, merged, owner);
       if (!updated) {
         throw new NotFoundError(`Cart item '${existing.id}' not found`);
       }
@@ -92,31 +100,36 @@ export const cartBiz = {
     return cartRepo.create({
       id: newId(),
       productId: input.productId,
+      userId: owner,
       quantity,
     });
   },
 
-  async updateQuantity(id: string, quantity: number): Promise<CartItem> {
+  async updateQuantity(
+    id: string,
+    quantity: number,
+    owner: CartOwner,
+  ): Promise<CartItem> {
     assertQuantity(quantity);
-    await cartBiz.getItem(id);
+    await cartBiz.getItem(id, owner);
 
-    const updated = await cartRepo.updateQuantity(id, quantity);
+    const updated = await cartRepo.updateQuantity(id, quantity, owner);
     if (!updated) throw new NotFoundError(`Cart item '${id}' not found`);
 
     return updated;
   },
 
-  async removeItem(id: string): Promise<CartItem> {
-    await cartBiz.getItem(id);
+  async removeItem(id: string, owner: CartOwner): Promise<CartItem> {
+    await cartBiz.getItem(id, owner);
 
-    const removed = await cartRepo.remove(id);
+    const removed = await cartRepo.remove(id, owner);
     if (!removed) throw new NotFoundError(`Cart item '${id}' not found`);
 
     return removed;
   },
 
-  async clear(): Promise<{ removed: number }> {
-    const removed = await cartRepo.clear();
+  async clear(owner: CartOwner): Promise<{ removed: number }> {
+    const removed = await cartRepo.clear(owner);
 
     return { removed: removed.length };
   },
@@ -126,11 +139,11 @@ export const cartBiz = {
    * cart mints an order id and is then emptied, so the shopper lands back on a
    * clean cart the way a real checkout would leave them.
    */
-  async checkout(): Promise<{ orderId: string }> {
-    const items = await cartRepo.findAll();
+  async checkout(owner: CartOwner): Promise<{ orderId: string }> {
+    const items = await cartRepo.findAll(owner);
     if (items.length === 0) throw new ConflictError("Cart is empty");
 
-    await cartRepo.clear();
+    await cartRepo.clear(owner);
 
     return { orderId: newId() };
   },

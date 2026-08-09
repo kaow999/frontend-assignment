@@ -1,4 +1,8 @@
-export type ErrorCode = "BAD_REQUEST" | "NOT_FOUND" | "CONFLICT";
+export type ErrorCode =
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "NOT_FOUND"
+  | "CONFLICT";
 
 /** Domain error raised by the business layer, mapped to HTTP by the service layer. */
 export class AppError extends Error {
@@ -14,6 +18,13 @@ export class AppError extends Error {
 export class BadRequestError extends AppError {
   constructor(message: string) {
     super("BAD_REQUEST", message);
+  }
+}
+
+/** Not signed in, or signed in with a credential the server will not accept. */
+export class UnauthorizedError extends AppError {
+  constructor(message: string) {
+    super("UNAUTHORIZED", message);
   }
 }
 

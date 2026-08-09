@@ -5,7 +5,14 @@ import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { app } from "../src/app";
 import { db } from "../src/db";
 import { migrationsFolder } from "../src/db/paths";
-import { cartItems, colors, products, sizes } from "../src/db/schema";
+import {
+  cartItems,
+  colors,
+  products,
+  sessions,
+  sizes,
+  users,
+} from "../src/db/schema";
 
 if (process.env.DATABASE_URL !== ":memory:") {
   throw new Error(
@@ -24,6 +31,8 @@ export const resetDatabase = () => {
 
   // Child rows first — the foreign keys are enforced.
   db.delete(cartItems).run();
+  db.delete(sessions).run();
+  db.delete(users).run();
   db.delete(products).run();
   db.delete(colors).run();
   db.delete(sizes).run();
@@ -32,37 +41,80 @@ export const resetDatabase = () => {
 export type ApiResponse<T = any> = {
   status: number;
   body: T;
+  /** Exposed so cookie flags can be asserted, not just the parsed body. */
+  headers: Headers;
 };
+
+export type ApiClient = <T = any>(
+  method: string,
+  path: string,
+  body?: unknown,
+) => Promise<ApiResponse<T>>;
 
 /**
  * Drives the real Elysia app in-process. No port is bound, so the full stack
  * — routing, zod input validation, handlers, zod response validation — is
  * exercised exactly as it would be over the network.
+ *
+ * `jar` makes the caller behave like a browser: it returns cookies the server
+ * set on earlier responses. Passing none means every request arrives without
+ * a session, which is what the pre-auth tests assume.
  */
-export const api = async <T = any>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<ApiResponse<T>> => {
-  const response = await app.handle(
-    new Request(`http://localhost${path}`, {
-      method,
-      headers:
-        body === undefined ? undefined : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-  );
+const request = (jar?: Map<string, string>): ApiClient =>
+  async <T = any>(method: string, path: string, body?: unknown) => {
+    const headers: Record<string, string> = {};
+    if (body !== undefined) headers["content-type"] = "application/json";
+    if (jar?.size) {
+      headers.cookie = [...jar]
+        .map(([name, value]) => `${name}=${value}`)
+        .join("; ");
+    }
 
-  const text = await response.text();
-  let parsed: unknown = text;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    /* non-JSON body, keep the raw text */
-  }
+    const response = await app.handle(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    );
 
-  return { status: response.status, body: parsed as T };
-};
+    if (jar) {
+      for (const header of response.headers.getSetCookie()) {
+        const [pair = ""] = header.split(";");
+        const separator = pair.indexOf("=");
+        if (separator === -1) continue;
+
+        const name = pair.slice(0, separator).trim();
+        const value = pair.slice(separator + 1).trim();
+        // Clearing a cookie is sent as an empty value, so drop it rather than
+        // storing "" and sending a meaningless header forever after.
+        if (value) jar.set(name, value);
+        else jar.delete(name);
+      }
+    }
+
+    const text = await response.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      /* non-JSON body, keep the raw text */
+    }
+
+    return {
+      status: response.status,
+      body: parsed as T,
+      headers: response.headers,
+    };
+  };
+
+export const api: ApiClient = request();
+
+/**
+ * A caller with its own cookie jar. Two clients are two independent browsers,
+ * which is what makes "one shopper cannot see another's cart" testable.
+ */
+export const createClient = (): ApiClient => request(new Map());
 
 /* ------------------------------- fixtures -------------------------------- */
 
