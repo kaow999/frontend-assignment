@@ -11,8 +11,20 @@ From the repo root:
 bun dev
 ```
 
-Storefront on <http://localhost:3000>, API on <http://localhost:4000>. The
-storefront reads `NEXT_PUBLIC_API_URL` and falls back to the API's default port.
+Storefront on <http://localhost:3000>, API on <http://localhost:4000>. That is
+the whole setup — every environment variable has a working default.
+
+To change one, copy the template next to the package that reads it. Next.js
+loads env files from `apps/web` and Bun loads them from `packages/backend`; a
+`.env` at the repo root is not read by either.
+
+```sh
+cp apps/web/.env.example apps/web/.env.local          # NEXT_PUBLIC_API_URL
+cp packages/backend/.env.example packages/backend/.env # PORT, WEB_ORIGIN, DATABASE_URL
+```
+
+`NEXT_PUBLIC_API_URL` must point at the backend's `PORT`, and the storefront's
+origin must match the backend's `WEB_ORIGIN` or CORS will block every request.
 
 Node 20.9+ is required — Next.js 16 declares `engines.node >= 20.9`, so the
 repo root carries an `.nvmrc`. (The top-level README's "Node 18+" predates the
