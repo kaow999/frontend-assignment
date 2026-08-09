@@ -10,6 +10,25 @@ work to be done.
 
 ---
 
+## Submission notes
+
+**The storefront is built.** Everything specific to the submission — the stack
+and why, the trade-offs, the two bugs found while verifying, and what would come
+next with more time — is in **[`apps/web/README.md`](./apps/web/README.md)**.
+
+Two things worth knowing before running it:
+
+- **Node 20.9+ is required**, not the 18 this README used to claim. `nvm use`
+  picks it up from the committed `.nvmrc`. Beyond that it is `bun install` and
+  `bun dev`, with no environment variables to set.
+- **Adding to a cart now requires signing in.** Accounts are not part of the
+  four requirements — they were added afterwards, on request, because the cart
+  was one row set shared by every visitor. That change to the backend is
+  documented in [Accounts and sessions](#accounts-and-sessions--a-change-to-the-backend)
+  below. Browsing and filtering the catalogue stay open to everyone.
+
+---
+
 ## The assignment
 
 Build the category page from the design. It must satisfy the following.
@@ -165,7 +184,10 @@ constraint — see [Frontend stack](#frontend-stack--bring-your-own).
 ## Prerequisites
 
 - **Bun 1.3.13+** — the package manager and runtime ([install](https://bun.sh))
-- **Node.js 18+** — required by Next.js
+- **Node.js 20.9+** — required by Next.js 16, which declares
+  `engines.node >= 20.9`. (This line said 18+ before; that predates the Next 16
+  upgrade and the app will not start on 18.) An `.nvmrc` is committed, so
+  `nvm use` picks the right version.
 
 No database server to install; SQLite is a file.
 

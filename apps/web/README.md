@@ -32,14 +32,14 @@ Next 16 upgrade.)
 
 ## Stack, and why
 
-| Choice                       | Reason                                                                                                                                                                |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **TanStack Query**           | Every piece of state here is server state. `useInfiniteQuery` maps onto the API's `offset`/`hasMore` contract directly, and cache invalidation is the whole cart story. |
-| **URL search params**        | Filters belong in the URL: a filtered view is shareable, the back button steps through changes, and a reload lands where you were.                                      |
-| **Eden Treaty**              | Already wired up in `lib/eden.ts`. Types are read back off the client, so they follow the backend's zod schemas without being re-declared.                              |
-| **Radix slider + dialog**    | A two-thumb range slider and a modal drawer are exactly the components worth not hand-rolling — focus management and keyboard behaviour are the hard parts.             |
-| **lucide-react**             | Icon set matching the design's weight.                                                                                                                                 |
-| **No global state library**  | The cart lives on the server and the filters live in the URL. There is nothing left for Zustand or Redux to hold.                                                       |
+| Choice                      | Reason                                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TanStack Query**          | Every piece of state here is server state. `useInfiniteQuery` maps onto the API's `offset`/`hasMore` contract directly, and cache invalidation is the whole cart story. |
+| **URL search params**       | Filters belong in the URL: a filtered view is shareable, the back button steps through changes, and a reload lands where you were.                                      |
+| **Eden Treaty**             | Already wired up in `lib/eden.ts`. Types are read back off the client, so they follow the backend's zod schemas without being re-declared.                              |
+| **Radix slider + dialog**   | A two-thumb range slider and a modal drawer are exactly the components worth not hand-rolling — focus management and keyboard behaviour are the hard parts.             |
+| **lucide-react**            | Icon set matching the design's weight.                                                                                                                                  |
+| **No global state library** | The cart lives on the server and the filters live in the URL. There is nothing left for Zustand or Redux to hold.                                                       |
 
 ## Layout
 
@@ -111,14 +111,42 @@ path unreachable. The 409's own message is what gets shown.
 they just clicked should not wait a round trip. A new cart line has no id until
 the server mints one, so faking it would only make the row flicker.
 
+## Bugs found while verifying
+
+**A missing price bound read as $0.** `Number(null)` and `Number("")` are both
+`0`, and `0` passes `Number.isFinite`, so the fallback for an absent `max` never
+ran. A first load sent `maxPrice=0` and filtered the whole catalogue away —
+every product gone, no error anywhere. Absence is now ruled out before parsing.
+
+**Alphabetical sizes.** Covered above: the API's order put 3X-Large ahead of
+Small.
+
+## Verified
+
+`bun run lint`, `check-types` and `build` pass across the monorepo, and the
+backend's 169 tests pass. Each requirement was also driven in a browser against
+the running API, with counts cross-checked against the API directly:
+
+| Check                | Result                                                             |
+| -------------------- | ------------------------------------------------------------------ |
+| Infinite scroll      | 12 at a time, stopping at "Showing 111 of 111" with an end message |
+| Multi-select widens  | green + red = 200 (100 each)                                       |
+| Facets narrow        | green AND size small = 11                                          |
+| Price                | $50–$100 = 193                                                     |
+| Search combines      | "Jumpsuit" + $50–$100 = 18                                         |
+| Filter change resets | 111 loaded, change a facet, back to 12                             |
+| Cart summary         | 3 items, $456 subtotal, −$182, $274 — matches `GET /cart` exactly  |
+| Checkout             | Redirects with an order id; empty cart shows the 409 and stays put |
+| Cart isolation       | Two accounts, two carts; signed out is a 401                       |
+
 ## With more time
 
 - A product detail page — the cards are presentational today, since the brief
   scopes the work to the category page.
-- Component and integration tests. The backend has 129; the frontend has none,
-  and the filter-state hook and cart summary arithmetic are the two places worth
+- Frontend tests. The backend has 169; the frontend has none, and the
+  filter-state hook and the cart summary arithmetic are the two places worth
   covering first.
 - Virtualised grid. A thousand cards in the DOM is fine; ten thousand would not
   be.
-- The cart is a single global cart with no auth, so it is shared by every
-  visitor. Real sessions would be the first thing to add.
+- On the accounts side: password reset, email verification, and rate limiting on
+  login.
