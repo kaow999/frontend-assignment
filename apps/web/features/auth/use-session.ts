@@ -26,7 +26,7 @@ export const useSession = () =>
   });
 
 /**
- * Which cart the current visitor owns.
+ * Which cart the current visitor owns, if any.
  *
  * `isReady` matters: until the session resolves we do not know whose cart the
  * server will return, and caching it under the wrong key would leave one
@@ -34,8 +34,13 @@ export const useSession = () =>
  */
 export const useCartOwner = () => {
   const { data, isPending } = useSession();
+  const user = data?.user ?? null;
 
-  return { owner: data?.user?.id ?? GUEST, isReady: !isPending };
+  return {
+    owner: user?.id ?? GUEST,
+    isSignedIn: Boolean(user),
+    isReady: !isPending,
+  };
 };
 
 /**

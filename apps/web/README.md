@@ -73,15 +73,18 @@ The session is an httpOnly cookie, so there is no token for the frontend to
 store or leak; the Eden client just sends `credentials: "include"` and the API
 decides whose cart to answer with.
 
-The cart query is keyed by owner (`["cart", userId | "guest"]`) rather than by a
-single `["cart"]`. Two things fall out of that: signing in swaps to a different
-cache entry instead of re-rendering the previous occupant's basket, and the
-query is held back until `GET /auth/me` resolves — otherwise a signed-in
-shopper's cart could land in the cache under `guest` and be shown to the next
-person to sign out. Signing in or out drops every cached cart outright.
+There is no guest cart. `/cart` answers 401 without a session, so the cart query
+does not run at all when signed out — it is not fired off to fail. The add
+button on a card becomes a sign-in link that carries the current filters in
+`?next=`, so signing in returns the shopper to the exact list they were looking
+at. The cart page shows a sign-in panel rather than an empty basket.
 
-Guests still share one cart, which the cart page says out loud rather than
-letting it be a surprise.
+The cart query is keyed by owner (`["cart", userId]`) rather than a single
+`["cart"]`. Two things fall out of that: signing in swaps to a different cache
+entry instead of re-rendering the previous occupant's basket, and the query is
+held back until `GET /auth/me` resolves — otherwise one shopper's cart could
+land in the cache under the wrong key. Signing in or out drops every cached
+cart outright.
 
 ## Decisions worth flagging
 

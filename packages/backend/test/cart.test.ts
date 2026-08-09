@@ -1,18 +1,33 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
 import {
-  api,
+  createClient,
   givenColor,
   givenProduct,
   givenSize,
   resetDatabase,
+  type ApiClient,
 } from "./helpers";
 
 const UUID_V7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/**
+ * The cart is behind a session, so every case here runs as one signed-in
+ * shopper. Shadowing `api` with that client keeps the call sites reading the
+ * same as they did before accounts existed.
+ */
+let api: ApiClient;
+
 beforeEach(async () => {
   resetDatabase();
+
+  api = createClient();
+  await api("POST", "/auth/register", {
+    email: "shopper@example.com",
+    password: "correct-horse-battery",
+  });
+
   await givenColor("blue");
   await givenSize("large");
   // tee: lists at 200, sells at 160 (-20%). hat: lists and sells at 50.

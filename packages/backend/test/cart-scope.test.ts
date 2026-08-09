@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
+import { app } from "../src/app";
 import {
   api,
   createClient,
@@ -64,28 +65,27 @@ describe("cart ownership", () => {
     expect(graceCart.body.items[0].quantity).toBe(1);
   });
 
-  test("a guest cart is separate from a signed-in one", async () => {
-    await api("POST", "/cart/items", { productId: "hat" });
-    await ada("POST", "/cart/items", { productId: "tee" });
-
-    const guest = await api("GET", "/cart");
-    const signedIn = await ada("GET", "/cart");
-
-    expect(guest.body.items).toHaveLength(1);
-    expect(guest.body.items[0].productId).toBe("hat");
-    expect(signedIn.body.items).toHaveLength(1);
-    expect(signedIn.body.items[0].productId).toBe("tee");
-  });
-
-  test("signing out returns the caller to the guest cart", async () => {
-    await api("POST", "/cart/items", { productId: "hat" });
-
+  test("signing out locks the cart again", async () => {
     const client = await signedInAs("hopper@example.com");
     await client("POST", "/cart/items", { productId: "tee" });
     await client("POST", "/auth/logout");
 
     const afterLogout = await client("GET", "/cart");
-    expect(afterLogout.body.items[0].productId).toBe("hat");
+    expect(afterLogout.status).toBe(401);
+  });
+
+  test("the cart is still there on signing back in", async () => {
+    const client = await signedInAs("hopper@example.com");
+    await client("POST", "/cart/items", { productId: "tee", quantity: 2 });
+    await client("POST", "/auth/logout");
+    await client("POST", "/auth/login", {
+      email: "hopper@example.com",
+      password: PASSWORD,
+    });
+
+    const restored = await client("GET", "/cart");
+    expect(restored.status).toBe(200);
+    expect(restored.body.items[0].quantity).toBe(2);
   });
 
   test("totals are computed per cart", async () => {
@@ -168,6 +168,57 @@ describe("another shopper's cart item", () => {
 
     const untouched = await grace("GET", "/cart");
     expect(untouched.body.items).toHaveLength(1);
+  });
+});
+
+/**
+ * There is no guest cart: every route under /cart needs a session, so a
+ * signed-out visitor is turned away rather than quietly handed a shared basket.
+ */
+describe("signed out", () => {
+  const ROUTES = [
+    ["GET", "/cart"],
+    ["DELETE", "/cart"],
+    ["POST", "/cart/checkout"],
+    ["GET", "/cart/items/some-id"],
+    ["POST", "/cart/items"],
+    ["PATCH", "/cart/items/some-id"],
+    ["DELETE", "/cart/items/some-id"],
+  ] as const;
+
+  for (const [method, path] of ROUTES) {
+    test(`${method} ${path} is a 401`, async () => {
+      const body =
+        method === "POST" && path === "/cart/items"
+          ? { productId: "tee" }
+          : method === "PATCH"
+            ? { quantity: 2 }
+            : undefined;
+
+      const res = await api(method, path, body);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe("Sign in to use your cart");
+    });
+  }
+
+  test("nothing is written to the database", async () => {
+    await api("POST", "/cart/items", { productId: "tee" });
+
+    // Ada would see it if a stray unowned row had been created and leaked.
+    const adaCart = await ada("GET", "/cart");
+    expect(adaCart.body.items).toHaveLength(0);
+  });
+
+  test("a forged session cookie is rejected the same way", async () => {
+    // Sent by hand: the helper's jar only ever holds cookies the server set.
+    const response = await app.handle(
+      new Request("http://localhost/cart", {
+        headers: { cookie: "session=019fe5ff-0000-7000-0000-000000000000" },
+      }),
+    );
+
+    expect(response.status).toBe(401);
   });
 });
 

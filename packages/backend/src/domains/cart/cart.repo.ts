@@ -1,4 +1,4 @@
-import { and, eq, getTableColumns, isNull, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, type SQL } from "drizzle-orm";
 
 import { db } from "../../db";
 import {
@@ -15,10 +15,11 @@ export type CartItemWithProduct = CartItem & {
 };
 
 /**
- * Which cart a request is talking about: a user id for a signed-in shopper, or
- * null for the guest cart.
+ * Whose cart a request is talking about. There is no guest cart, so this is
+ * always a real user id — the route layer rejects the request before it gets
+ * here if nobody is signed in.
  */
-export type CartOwner = string | null;
+export type CartOwner = string;
 
 const withProduct = {
   ...getTableColumns(cartItems),
@@ -26,13 +27,11 @@ const withProduct = {
 };
 
 /**
- * Every query goes through this. `user_id IS NULL` and `user_id = ?` are
- * different sets, so one shopper's rows are unreachable from another's session
- * — including by id, which is why the single-row lookups are scoped too rather
- * than trusting the caller to have checked.
+ * Every query goes through this, so one shopper's rows are unreachable from
+ * another's session — including by id, which is why the single-row lookups are
+ * scoped too rather than trusting the caller to have checked.
  */
-const ownedBy = (owner: CartOwner): SQL =>
-  owner === null ? isNull(cartItems.userId) : eq(cartItems.userId, owner);
+const ownedBy = (owner: CartOwner): SQL => eq(cartItems.userId, owner);
 
 /** Repository layer: data access only, no business rules. */
 export const cartRepo = {

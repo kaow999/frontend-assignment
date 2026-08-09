@@ -67,11 +67,13 @@ export const cartItems = sqliteTable("cart_items", {
   id: text("id").primaryKey(),
   productId: text("product_id").references(() => products.id),
   /**
-   * Null means the guest cart — the single shared cart this API had before
-   * accounts existed. A signed-in shopper gets their own rows instead, so the
-   * two never mix.
+   * Every line belongs to an account — there is no guest cart, so adding to a
+   * cart requires signing in. Enforced here rather than only in the handlers,
+   * so an unowned row cannot be written at all.
    */
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   quantity: integer("quantity").notNull().default(1),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()

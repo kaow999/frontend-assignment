@@ -23,16 +23,19 @@ export const MAX_QUANTITY = 99;
  * The cart lives on the server — the API picks which one from the session
  * cookie — so the server is the only sensible source of truth. Nothing about
  * the cart is mirrored into React state or storage; every view reads this query.
+ *
+ * There is no guest cart: signed out, `/cart` answers 401, so the query is not
+ * run at all rather than fired off to fail.
  */
 export const useCart = () => {
-  const { owner, isReady } = useCartOwner();
+  const { owner, isSignedIn, isReady } = useCartOwner();
 
   return useQuery({
     queryKey: queryKeys.cart.of(owner),
     queryFn: ({ signal }) => fetchCart(signal),
     // Held back until we know who is asking, so the response is never filed
-    // under the wrong owner.
-    enabled: isReady,
+    // under the wrong owner — and skipped entirely for a signed-out visitor.
+    enabled: isReady && isSignedIn,
     // Unlike the catalogue, the cart is mutable — never serve it stale.
     staleTime: 0,
   });

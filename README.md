@@ -118,11 +118,13 @@ solution needs more than `bun install` and `bun dev`.
 > This is that note. Accounts are **not** part of the four requirements; they
 > were added afterwards, on request, because the cart was a single global row
 > set that every visitor shared.
+>
+> This changes the assignment's own behaviour: adding to a cart now requires
+> signing in, where before it did not.
 
-**Schema.** Two new tables, `users` and `sessions`, and one new nullable column,
-`cart_items.user_id` (migration `0001`). Nullable is the important part: a
-request with no session still reads and writes `user_id IS NULL`, which is
-exactly the cart this API had before, so the original 130 tests pass unchanged.
+**Schema.** Two new tables, `users` and `sessions`, and `cart_items.user_id`,
+which is `NOT NULL` — every line belongs to an account, so an unowned row cannot
+be written at all (migrations `0001` and `0002`).
 
 **Routes.** `POST /auth/register`, `POST /auth/login`, `POST /auth/logout` and
 `GET /auth/me`. Passwords are hashed with argon2id via `Bun.password` — no new
@@ -130,13 +132,13 @@ dependency. The session is an opaque row id in an httpOnly, `SameSite=Lax`
 cookie, so no script on the page can read it, and signing out revokes it
 server-side the way a stateless JWT could not.
 
-**Cart.** Every cart query is now scoped by owner. Reaching another shopper's
-line by id answers 404 rather than 403 — a 403 would confirm the id exists.
+**Cart.** There is no guest cart. Every route under `/cart` requires a session
+and answers `401` without one, and every query is scoped to the owner. Reaching
+another shopper's line by id answers 404 rather than 403 — a 403 would confirm
+the id exists. The catalogue stays open to anyone; only putting something in a
+basket needs an account.
 
-**What this does not do.** Guests still share one cart, because guest sessions
-were out of scope; signing in is what makes a cart private. There is no merge on
-login for the same reason — pulling a shared basket into someone's account would
-be worse than leaving it. Also no password reset, email verification, or rate
+**What this does not do.** No password reset, no email verification, and no rate
 limiting on login.
 
 CORS now sends `credentials: true`, which is why `WEB_ORIGIN` must stay an exact
