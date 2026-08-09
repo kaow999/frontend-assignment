@@ -1,7 +1,7 @@
-import { CircleUserRound } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AccountMenu } from "./account-menu";
 import { CartButton } from "./cart-button";
 import { HeaderSearch } from "./header-search";
 
@@ -24,12 +24,7 @@ export const SiteHeader = () => (
 
       <div className="flex shrink-0 items-center gap-3">
         <CartButton />
-        <button
-          aria-label="Account"
-          className="rounded-full p-1 text-ink transition-opacity hover:opacity-70"
-        >
-          <CircleUserRound className="size-6" aria-hidden />
-        </button>
+        <AccountMenu />
       </div>
     </div>
   </header>

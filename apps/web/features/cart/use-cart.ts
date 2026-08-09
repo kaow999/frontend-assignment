@@ -13,23 +13,30 @@ import {
   type CartSummary,
 } from "../../lib/api/cart";
 import { queryKeys } from "../../lib/query-keys";
+import { useCartOwner } from "../auth/use-session";
 import { summarize } from "./summary";
 
 /** The backend clamps here too; the UI needs to know so it can stop at the cap. */
 export const MAX_QUANTITY = 99;
 
 /**
- * There is no auth on the API, so the cart is one global row set on the server
- * — which makes the server the only sensible source of truth. Nothing about the
- * cart is mirrored into React state or storage; every view reads this query.
+ * The cart lives on the server — the API picks which one from the session
+ * cookie — so the server is the only sensible source of truth. Nothing about
+ * the cart is mirrored into React state or storage; every view reads this query.
  */
-export const useCart = () =>
-  useQuery({
-    queryKey: queryKeys.cart,
+export const useCart = () => {
+  const { owner, isReady } = useCartOwner();
+
+  return useQuery({
+    queryKey: queryKeys.cart.of(owner),
     queryFn: ({ signal }) => fetchCart(signal),
-    // Unlike the catalogue, the cart is mutable and shared — never serve it stale.
+    // Held back until we know who is asking, so the response is never filed
+    // under the wrong owner.
+    enabled: isReady,
+    // Unlike the catalogue, the cart is mutable — never serve it stale.
     staleTime: 0,
   });
+};
 
 /** Lets the grid show a stepper for products already in the cart. */
 export const useCartLinesByProduct = () => {
@@ -56,26 +63,28 @@ const useOptimisticCartMutation = <TArgs>(
   apply: (cart: CartSummary, args: TArgs) => CartSummary,
 ) => {
   const queryClient = useQueryClient();
+  const { owner } = useCartOwner();
+  const cartKey = queryKeys.cart.of(owner);
 
   return useMutation({
     mutationFn,
     onMutate: async (args: TArgs) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.cart });
-      const previous = queryClient.getQueryData<CartSummary>(queryKeys.cart);
+      await queryClient.cancelQueries({ queryKey: cartKey });
+      const previous = queryClient.getQueryData<CartSummary>(cartKey);
 
       if (previous) {
-        queryClient.setQueryData(queryKeys.cart, apply(previous, args));
+        queryClient.setQueryData(cartKey, apply(previous, args));
       }
 
       return { previous };
     },
     onError: (_error, _args, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(queryKeys.cart, context.previous);
+        queryClient.setQueryData(cartKey, context.previous);
       }
     },
     // Settled rather than success: either way the server's numbers win.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.cart }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cartKey }),
   });
 };
 
@@ -97,23 +106,29 @@ export const useRemoveCartItem = () =>
     (cart, { id }) => summarize(cart.items.filter((item) => item.id !== id)),
   );
 
-export const useAddToCart = () => {
+/** Refetches whichever cart the current visitor owns. */
+const useRefreshCart = () => {
   const queryClient = useQueryClient();
+  const { owner } = useCartOwner();
+
+  return () =>
+    queryClient.invalidateQueries({ queryKey: queryKeys.cart.of(owner) });
+};
+
+export const useAddToCart = () => {
+  const refreshCart = useRefreshCart();
 
   return useMutation({
     mutationFn: (input: { productId: string; quantity?: number }) =>
       addCartItem(input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.cart }),
+    onSuccess: refreshCart,
   });
 };
 
 export const useClearCart = () => {
-  const queryClient = useQueryClient();
+  const refreshCart = useRefreshCart();
 
-  return useMutation({
-    mutationFn: clearCart,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.cart }),
-  });
+  return useMutation({ mutationFn: clearCart, onSuccess: refreshCart });
 };
 
 /**
@@ -122,10 +137,7 @@ export const useClearCart = () => {
  * surface as an error instead of a redirect.
  */
 export const useCheckout = () => {
-  const queryClient = useQueryClient();
+  const refreshCart = useRefreshCart();
 
-  return useMutation({
-    mutationFn: checkout,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.cart }),
-  });
+  return useMutation({ mutationFn: checkout, onSuccess: refreshCart });
 };

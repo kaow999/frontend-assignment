@@ -1,6 +1,8 @@
 import { Elysia } from "elysia";
 
 import { errorResponseSchema, idParamSchema } from "../../common/schemas";
+import { readSessionCookie } from "../../common/session";
+import { authBiz } from "../auth/auth.biz";
 import {
   addToCartSchema,
   cartItemSchema,
@@ -11,28 +13,38 @@ import {
   updateCartItemSchema,
 } from "./cart.schema";
 import { cartService } from "./cart.service";
+import type { CartOwner } from "./cart.repo";
 
 /**
  * Route layer: public HTTP surface, with zod schemas on input and output.
  *
- * There is no auth on this API, so the cart is a single global cart backed by
- * the shared database rather than one cart per user.
+ * Every handler is scoped to one cart. `derive` resolves the session cookie
+ * once per request and hands down the owner, so no handler can forget to.
+ *
+ * A request with no valid session gets the guest cart (`owner: null`) rather
+ * than a 401. The catalogue is browsable signed-out, and being able to fill a
+ * basket before creating an account is the behaviour shoppers expect.
  */
 export const cartRouter = new Elysia({ prefix: "/cart", tags: ["cart"] })
-  .get("/", () => cartService.get(), {
+  .derive(async ({ cookie }): Promise<{ owner: CartOwner }> => {
+    const user = await authBiz.userForSession(readSessionCookie(cookie));
+
+    return { owner: user?.id ?? null };
+  })
+  .get("/", ({ owner }) => cartService.get(owner), {
     response: { 200: cartSummarySchema },
   })
-  .delete("/", () => cartService.clear(), {
+  .delete("/", ({ owner }) => cartService.clear(owner), {
     response: { 200: clearCartSchema },
   })
-  .post("/checkout", () => cartService.checkout(), {
+  .post("/checkout", ({ owner }) => cartService.checkout(owner), {
     response: { 200: checkoutSchema, 409: errorResponseSchema },
   })
-  .get("/items/:id", ({ params }) => cartService.getItem(params.id), {
+  .get("/items/:id", ({ params, owner }) => cartService.getItem(params.id, owner), {
     params: idParamSchema,
     response: { 200: cartItemWithProductSchema, 404: errorResponseSchema },
   })
-  .post("/items", ({ body }) => cartService.addItem(body), {
+  .post("/items", ({ body, owner }) => cartService.addItem(body, owner), {
     body: addToCartSchema,
     response: {
       201: cartItemSchema,
@@ -42,7 +54,8 @@ export const cartRouter = new Elysia({ prefix: "/cart", tags: ["cart"] })
   })
   .patch(
     "/items/:id",
-    ({ params, body }) => cartService.updateQuantity(params.id, body.quantity),
+    ({ params, body, owner }) =>
+      cartService.updateQuantity(params.id, body.quantity, owner),
     {
       params: idParamSchema,
       body: updateCartItemSchema,
@@ -53,7 +66,11 @@ export const cartRouter = new Elysia({ prefix: "/cart", tags: ["cart"] })
       },
     },
   )
-  .delete("/items/:id", ({ params }) => cartService.removeItem(params.id), {
-    params: idParamSchema,
-    response: { 200: cartItemSchema, 404: errorResponseSchema },
-  });
+  .delete(
+    "/items/:id",
+    ({ params, owner }) => cartService.removeItem(params.id, owner),
+    {
+      params: idParamSchema,
+      response: { 200: cartItemSchema, 404: errorResponseSchema },
+    },
+  );

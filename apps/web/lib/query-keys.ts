@@ -12,5 +12,14 @@ export const queryKeys = {
   },
   colors: ["colors"] as const,
   sizes: ["sizes"] as const,
-  cart: ["cart"] as const,
+  session: ["session"] as const,
+  /**
+   * The cart is keyed by who owns it, so signing in or out swaps cache entries
+   * instead of showing the previous occupant's basket for a frame. `all` is the
+   * prefix used to evict every cart at once when the session changes.
+   */
+  cart: {
+    all: ["cart"] as const,
+    of: (owner: string) => ["cart", owner] as const,
+  },
 };

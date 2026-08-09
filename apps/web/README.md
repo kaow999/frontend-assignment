@@ -64,6 +64,25 @@ lib/
 `lib/` is shared plumbing. A component reaches for a hook in `features/`; a hook
 never imports a component.
 
+## Accounts
+
+Added after the four requirements, on request — the API's cart was one global
+row set shared by every visitor. See the root README for the backend side.
+
+The session is an httpOnly cookie, so there is no token for the frontend to
+store or leak; the Eden client just sends `credentials: "include"` and the API
+decides whose cart to answer with.
+
+The cart query is keyed by owner (`["cart", userId | "guest"]`) rather than by a
+single `["cart"]`. Two things fall out of that: signing in swaps to a different
+cache entry instead of re-rendering the previous occupant's basket, and the
+query is held back until `GET /auth/me` resolves — otherwise a signed-in
+shopper's cart could land in the cache under `guest` and be shown to the next
+person to sign out. Signing in or out drops every cached cart outright.
+
+Guests still share one cart, which the cart page says out loud rather than
+letting it be a surprise.
+
 ## Decisions worth flagging
 
 **Filters apply live.** The design has an "Apply Filter" button, but the brief
